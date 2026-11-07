@@ -1,0 +1,277 @@
+(function () {
+  const $ = (s, el = document) => el.querySelector(s);
+  const app = $("#app");
+  const POLL = ((window.ARCHERY_CONFIG || {}).pollSeconds || 4) * 1000;
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const today = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10); };
+  const prettyDate = (iso) => new Date(iso + "T12:00").toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const userKey = (n) => n.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  let me = null;            // {name, key}
+  let sess = null;          // {venue, date, id}
+  let myScore = null;       // {name, round, arrows:"X,9,M", updated}
+  let timer = null;
+  let tab = "score";
+
+  function toast(msg) {
+    const t = $("#toast"); t.textContent = msg; t.classList.add("show");
+    clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove("show"), 2200);
+  }
+  function setTheme(t) { document.body.dataset.theme = t || "default"; }
+
+  async function sha(text) {
+    const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // ---------- scoring ----------
+  const toks = (s) => (s.arrows ? s.arrows.split(",") : []);
+  const val = (t) => (t === "X" ? 10 : t === "M" ? 0 : +t);
+  function summarise(s) {
+    const r = window.roundById(s.round); if (!r) return null;
+    const a = toks(s), tot = window.roundTotals(r);
+    const total = a.reduce((x, t) => x + val(t), 0);
+    const top = r.zone === "worc" ? 5 : 9;
+    return {
+      r, a, total, arrows: a.length, max: tot.max, of: tot.arrows,
+      hits: a.filter((t) => val(t) > 0).length,
+      golds: a.filter((t) => val(t) >= top).length,
+      xs: a.filter((t) => t === "X").length,
+    };
+  }
+
+  // ---------- views ----------
+  function renderHeader() {
+    const w = $("#who");
+    if (!me) { w.hidden = true; return; }
+    w.hidden = false;
+    w.innerHTML = `<span class="avatar">${esc(me.name[0].toUpperCase())}</span><span class="nm">${esc(me.name)}</span><button class="link" id="logout">Log out</button>`;
+    $("#logout").onclick = logout;
+  }
+  function logout() {
+    stopPoll(); me = null; sess = null; myScore = null;
+    try { localStorage.removeItem("archery.me"); } catch {}
+    setTheme("default"); renderHeader(); viewLogin();
+  }
+
+  function viewLogin() {
+    setTheme("default"); stopPoll();
+    const demo = !window.Store.shared;
+    app.innerHTML = `
+      <section class="hero">
+        <h1>Score every arrow.<br><span class="grad">See everyone's score live.</span></h1>
+        <p>UK Archery GB rounds. Pick your venue and date, then shoot together.</p>
+      </section>
+      <form class="card login" id="loginForm" autocomplete="off">
+        <h2>Log in <small>or create an account</small></h2>
+        <label>Your name<input id="ln" required maxlength="24" placeholder="e.g. Sam Archer" autocapitalize="words"></label>
+        <label>PIN (4+ digits)<input id="lp" required inputmode="numeric" pattern="[0-9]{4,}" maxlength="12" type="password" placeholder="••••"></label>
+        <button class="btn primary" type="submit">Enter the range →</button>
+        <p class="hint" id="lerr"></p>
+        ${demo ? `<p class="note">Demo mode: scores are stored in this browser only. See README to turn on shared live scoring.</p>` : ""}
+      </form>`;
+    $("#loginForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const name = $("#ln").value.trim().replace(/\s+/g, " "), pin = $("#lp").value;
+      const key = userKey(name), err = $("#lerr");
+      if (!key) { err.textContent = "Please enter a name."; return; }
+      try {
+        const hash = await sha(`${key}:${pin}`);
+        const u = await window.Store.getUser(key);
+        if (!u) await window.Store.putUser(key, { name, hash });
+        else if (u.hash !== hash) { err.textContent = "That name exists and the PIN doesn't match."; return; }
+        me = { name: (u && u.name) || name, key };
+        try { localStorage.setItem("archery.me", JSON.stringify(me)); } catch {}
+        renderHeader(); viewPick(); toast(u ? `Welcome back, ${me.name}!` : `Account created. Welcome, ${me.name}!`);
+      } catch (ex) { err.textContent = ex.message || "Something went wrong."; }
+    };
+  }
+
+  function viewPick() {
+    setTheme("default"); stopPoll(); sess = null; myScore = null;
+    let chosen = null;
+    app.innerHTML = `
+      <section class="pick">
+        <h2>Where are you shooting?</h2>
+        <div class="venues">
+          ${window.VENUES.map((v) => `
+            <button class="venue" data-id="${v.id}" data-theme="${v.theme}">
+              <span class="v-emoji">${v.emoji}</span>
+              <span class="v-name">${esc(v.name)}</span>
+              <span class="v-sub">${esc(v.sub)}</span>
+              <span class="v-bar"></span>
+            </button>`).join("")}
+        </div>
+        <div class="card datebox">
+          <label>Date<input type="date" id="date" value="${today()}"></label>
+          <button class="btn primary" id="go" disabled>Join session →</button>
+        </div>
+      </section>`;
+    app.querySelectorAll(".venue").forEach((b) => b.onclick = () => {
+      app.querySelectorAll(".venue").forEach((x) => x.classList.remove("on"));
+      b.classList.add("on"); chosen = b.dataset.id;
+      setTheme(window.VENUES.find((v) => v.id === chosen).theme);
+      $("#go").disabled = false;
+    });
+    $("#go").onclick = () => {
+      const date = $("#date").value; if (!chosen || !date) return;
+      joinSession(chosen, date);
+    };
+  }
+
+  async function joinSession(venueId, date) {
+    const venue = window.VENUES.find((v) => v.id === venueId);
+    sess = { venue, date, id: `${venueId}_${date}` };
+    setTheme(venue.theme);
+    app.innerHTML = `<div class="loading">Loading session…</div>`;
+    try {
+      const data = await window.Store.getSession(sess.id);
+      myScore = data[me.key] || null;
+      tab = "score";
+      viewSession(data);
+      startPoll();
+    } catch (ex) { toast(ex.message); viewPick(); }
+  }
+
+  function viewSession(data) {
+    app.innerHTML = `
+      <section class="session">
+        <div class="s-head">
+          <button class="link" id="back">← Change venue/date</button>
+          <h2>${esc(sess.venue.name)}</h2>
+          <p class="when">${prettyDate(sess.date)} <span class="live"><i></i>${window.Store.shared ? "Live" : "Local"}</span></p>
+        </div>
+        <nav class="tabs">
+          <button data-t="score" class="${tab === "score" ? "on" : ""}">My scorecard</button>
+          <button data-t="board" class="${tab === "board" ? "on" : ""}">Leaderboard <span class="count" id="cnt"></span></button>
+        </nav>
+        <div id="panel"></div>
+      </section>`;
+    $("#back").onclick = viewPick;
+    app.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => { tab = b.dataset.t; viewSession(lastData); });
+    lastData = data; renderPanel();
+  }
+  let lastData = {};
+
+  function renderPanel() {
+    $("#cnt").textContent = Object.keys(lastData).length || "";
+    if (tab === "board") renderBoard(); else renderScore();
+  }
+
+  // ----- leaderboard -----
+  function renderBoard() {
+    const rows = Object.entries(lastData).map(([k, s]) => ({ k, s, m: summarise(s) })).filter((x) => x.m);
+    rows.sort((a, b) => b.m.total - a.m.total || b.m.xs - a.m.xs || b.m.golds - a.m.golds);
+    const panel = $("#panel");
+    if (!rows.length) { panel.innerHTML = `<div class="card empty">No scores yet. Be the first on the line! 🎯</div>`; return; }
+    panel.innerHTML = `<div class="board">${rows.map((x, i) => {
+      const pct = Math.round((x.m.arrows / x.m.of) * 100);
+      const medal = ["🥇", "🥈", "🥉"][i] || i + 1;
+      return `<article class="row ${x.k === me.key ? "me" : ""} ${i < 3 ? "podium p" + (i + 1) : ""}">
+        <div class="rank">${medal}</div>
+        <div class="who2"><b>${esc(x.s.name)}</b><span>${esc(x.m.r.name)} · ${x.m.arrows}/${x.m.of} arrows</span>
+          <div class="prog"><i style="width:${pct}%"></i></div></div>
+        <div class="stats"><span>${x.m.hits} hits</span><span>${x.m.golds} golds</span>${x.m.xs ? `<span>${x.m.xs} X</span>` : ""}</div>
+        <div class="total">${x.m.total}<small>/ ${x.m.max}</small></div>
+      </article>`;
+    }).join("")}</div><p class="note c">Updates automatically${window.Store.shared ? "" : " (demo mode: this browser only)"}.</p>`;
+  }
+
+  // ----- scorecard -----
+  function renderScore() {
+    const panel = $("#panel");
+    if (!myScore) {
+      const groups = [...new Set(window.ROUNDS.map((r) => r.group))];
+      panel.innerHTML = `<div class="card">
+        <h3>Choose your round</h3>
+        <select id="round">${groups.map((g) => `<optgroup label="${g}">${window.ROUNDS.filter((r) => r.group === g).map((r) => {
+          const t = window.roundTotals(r);
+          return `<option value="${r.id}">${esc(r.name)} · ${t.arrows} arrows · max ${t.max}</option>`; }).join("")}</optgroup>`).join("")}</select>
+        <button class="btn primary" id="start">Start scoring →</button></div>`;
+      $("#start").onclick = () => {
+        myScore = { name: me.name, round: $("#round").value, arrows: "", updated: Date.now() };
+        save(); renderScore();
+      };
+      return;
+    }
+    const m = summarise(myScore), r = m.r;
+    const done = m.arrows >= m.of;
+    const endIdx = Math.floor(m.arrows / r.perEnd), inEnd = m.arrows % r.perEnd;
+    const keys = window.ZONES[r.zone];
+    // section progress
+    let acc = 0;
+    const secs = r.sections.map((s) => { const from = acc; acc += s.arrows;
+      const part = m.a.slice(from, acc); return { ...s, from, part, sum: part.reduce((x, t) => x + val(t), 0) }; });
+    const curSec = secs.find((s) => m.arrows >= s.from && m.arrows < s.from + s.arrows) || secs[secs.length - 1];
+    const cur = m.a.slice(endIdx * r.perEnd, endIdx * r.perEnd + inEnd);
+
+    panel.innerHTML = `
+      <div class="card scorehead">
+        <div><span class="lbl">${esc(r.name)}</span><span class="sub">${esc(curSec.label)} · End ${Math.min(endIdx + 1, Math.ceil(m.of / r.perEnd))} of ${Math.ceil(m.of / r.perEnd)}</span></div>
+        <div class="big">${m.total}<small>/ ${m.max}</small></div>
+      </div>
+      ${done ? `<div class="card done">🏆 Round complete! Final score <b>${m.total}</b> (${m.golds} golds${m.xs ? `, ${m.xs} X` : ""}).</div>` : `
+      <div class="card entry">
+        <div class="slots">${Array.from({ length: r.perEnd }, (_, i) => {
+          const t = cur[i]; const kc = t ? (keys.find((k) => k[0] === t) || [])[2] : "";
+          return `<span class="slot ${t ? "f " + kc : ""} ${i === inEnd ? "next" : ""}">${t || ""}</span>`; }).join("")}</div>
+        <div class="keys z-${r.zone}">${keys.map(([l, , c]) => `<button class="key ${c}" data-k="${l}">${l}</button>`).join("")}</div>
+        <div class="actions"><button class="btn ghost" id="undo" ${m.arrows ? "" : "disabled"}>⌫ Undo arrow</button></div>
+      </div>`}
+      <div class="card ends">
+        <h3>Scorecard</h3>
+        ${secs.map((s) => {
+          const nEnds = Math.ceil(s.arrows / r.perEnd);
+          let run = 0;
+          const rows = Array.from({ length: nEnds }, (_, e) => {
+            const a = s.part.slice(e * r.perEnd, (e + 1) * r.perEnd); if (!a.length) return "";
+            const es = a.reduce((x, t) => x + val(t), 0); run += es;
+            return `<tr><td>${e + 1}</td><td class="arr">${a.map((t) => `<i class="a ${(keys.find((k) => k[0] === t) || [])[2]}">${t}</i>`).join("")}</td><td>${es}</td><td>${run}</td></tr>`;
+          }).join("");
+          return `<div class="sec"><div class="sec-h"><b>${esc(s.label)}</b><span>${s.sum} · ${s.part.length}/${s.arrows}</span></div>
+            ${rows ? `<table><thead><tr><th>End</th><th>Arrows</th><th>End</th><th>Run</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">Not started</p>`}</div>`;
+        }).join("")}
+        <div class="actions"><button class="btn ghost danger" id="reset">Start a different round</button></div>
+      </div>`;
+
+    panel.querySelectorAll(".key").forEach((b) => b.onclick = () => {
+      myScore.arrows = myScore.arrows ? myScore.arrows + "," + b.dataset.k : b.dataset.k;
+      save(); renderScore();
+      if (summarise(myScore).arrows >= m.of) toast("Round complete! 🏆");
+    });
+    const u = $("#undo"); if (u) u.onclick = () => { const a = toks(myScore); a.pop(); myScore.arrows = a.join(","); save(); renderScore(); };
+    $("#reset").onclick = async () => {
+      if (!confirm("Remove your current scorecard for this venue and date?")) return;
+      await window.Store.deleteScore(sess.id, me.key); delete lastData[me.key]; myScore = null; renderPanel();
+    };
+  }
+
+  let saving = Promise.resolve();
+  function save() {
+    myScore.updated = Date.now(); lastData[me.key] = { ...myScore };
+    const snap = { ...myScore }; $("#cnt") && ($("#cnt").textContent = Object.keys(lastData).length);
+    saving = saving.then(() => window.Store.putScore(sess.id, me.key, snap)).catch((e) => toast("Save failed: " + e.message));
+  }
+
+  // ----- polling -----
+  function startPoll() {
+    stopPoll();
+    timer = setInterval(async () => {
+      if (!sess || document.hidden) return;
+      try {
+        const d = await window.Store.getSession(sess.id);
+        const mine = lastData[me.key]; d[me.key] = mine && (!d[me.key] || (mine.updated || 0) >= (d[me.key].updated || 0)) ? mine : d[me.key];
+        if (!d[me.key]) delete d[me.key];
+        lastData = d; if (tab === "board") renderPanel(); else $("#cnt") && ($("#cnt").textContent = Object.keys(d).length || "");
+      } catch {}
+    }, POLL);
+  }
+  function stopPoll() { clearInterval(timer); timer = null; }
+  window.addEventListener("storage", (e) => { if (e.key === "archery.v1" && sess && !window.Store.shared) window.Store.getSession(sess.id).then((d) => { lastData = d; if (tab === "board") renderPanel(); }); });
+
+  // ---------- boot ----------
+  $("#brand").onclick = (e) => { e.preventDefault(); if (me) viewPick(); };
+  try { me = JSON.parse(localStorage.getItem("archery.me")); } catch { me = null; }
+  renderHeader();
+  me && me.key ? viewPick() : viewLogin();
+})();
