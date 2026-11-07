@@ -252,7 +252,8 @@
 
   function buildDef(f) {
     const zl = { five: "5-zone", ten: "10-zone" };
-    if (f.mode !== "custom") return window.roundById(f.mode);
+    if (f.mode.startsWith("q:")) { const [, d, z] = f.mode.split(":"); f = { dist: d, unit: "m", zone: z, ends: 5, perEnd: 6 }; }
+    else if (f.mode !== "custom") return window.roundById(f.mode);
     const label = `${f.dist} ${f.unit}`;
     return { id: "custom", name: `${label} · ${zl[f.zone]}`, group: "Custom", zone: f.zone, perEnd: f.perEnd,
       sections: [{ label, arrows: f.ends * f.perEnd }] };
@@ -264,10 +265,12 @@
     const zone = c ? c.zone : "ten", perEnd = c ? c.perEnd : 6, ends = c ? c.sections[0].arrows / c.perEnd : 5;
     const groups = [...new Set(window.ROUNDS.map((r) => r.group))];
     const curMode = config && config.def && config.def.id !== "custom" ? config.def.id : "custom";
+    const startMode = config && config.def ? curMode : "q:10:ten";
     $("#panel").innerHTML = `<form class="card setup" id="setup">
       <h3>${editing ? "Edit tonight's setup" : "Set up tonight's session"}</h3>
       <p class="note" style="margin-top:-6px">${editing ? "Archers who haven't shot yet will switch to the new setup." : "You're first here, so you're the admin. Everyone who joins this venue and date will use this setup."}</p>
-      <label>Round<select id="mode"><option value="custom">Custom (pick distance, target and ends)</option>
+      <label>Round<select id="mode"><optgroup label="Quick setups (6 arrows × 5 ends)">${[10, 12, 15].flatMap((d) => [["ten", "10-zone"], ["five", "5-zone"]].map(([z, zl]) => `<option value="q:${d}:${z}">${d} m · 6 arrows × 5 ends · ${zl}</option>`)).join("")}</optgroup>
+        <optgroup label="Custom"><option value="custom">Custom (pick distance, target and ends)</option></optgroup>
         ${groups.map((g) => `<optgroup label="${g}">${window.ROUNDS.filter((r) => r.group === g).map((r) => { const t = window.roundTotals(r);
           return `<option value="${r.id}">${esc(r.name)} · ${t.arrows} arrows</option>`; }).join("")}</optgroup>`).join("")}</select></label>
       <div id="customBox">
@@ -282,7 +285,7 @@
       <p class="note" id="sum"></p>
       <div class="actions" style="gap:10px"><button class="btn primary" type="submit">${editing ? "Save setup" : "Start session"} →</button>
       ${editing ? `<button class="btn ghost" type="button" id="cancel">Cancel</button>` : ""}</div></form>`;
-    $("#mode").value = curMode; $("#unit").value = unit; $("#zone").value = zone; $("#pe").value = perEnd;
+    $("#mode").value = startMode; $("#unit").value = unit; $("#zone").value = zone; $("#pe").value = perEnd;
     const read = () => ({ mode: $("#mode").value, dist: $("#dist").value, unit: $("#unit").value, zone: $("#zone").value, ends: +$("#ends").value, perEnd: +$("#pe").value });
     const upd = () => { const f = read(); $("#customBox").hidden = f.mode !== "custom";
       const d = buildDef(f), t = window.roundTotals(d); $("#sum").textContent = `${d.name} · ${t.arrows} arrows · max ${t.max}`;
