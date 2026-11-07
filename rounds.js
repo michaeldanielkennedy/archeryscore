@@ -7,9 +7,9 @@
 // Each section is a block of arrows shot at one distance.
 
 window.VENUES = [
-  { id: "hillsborough", name: "1st Hillsborough", sub: "Scouts Archery", theme: "hillsborough", emoji: "🏹" },
-  { id: "lisburn", name: "Lisburn Cathedral", sub: "Archery Club", theme: "lisburn", emoji: "⛪" },
-  { id: "dagger", name: "Dagger Road", sub: "Archery Range", theme: "dagger", emoji: "🎯" },
+  { id: "hillsborough", name: "1st Hillsborough", sub: "Scouts Archery", theme: "hillsborough" },
+  { id: "lisburn", name: "Lisburn Cathedral", sub: "Archery Club", theme: "lisburn" },
+  { id: "dagger", name: "Dagger Road", sub: "Archery Range", theme: "dagger" },
 ];
 
 window.ROUNDS = [

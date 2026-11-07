@@ -14,6 +14,7 @@
   let tab = "score";
   let config = null;        // session setup chosen by the admin: {def, admin, adminName}
   let editing = false;
+  let likeForLike = false;
 
   function toast(msg) {
     const t = $("#toast"); t.textContent = msg; t.classList.add("show");
@@ -39,8 +40,11 @@
       hits: a.filter((t) => val(t) > 0).length,
       golds: a.filter((t) => val(t) >= top).length,
       xs: a.filter((t) => t === "X").length,
+      ends: Math.floor(a.length / r.perEnd), totalEnds: Math.ceil(tot.arrows / r.perEnd),
+      perTurn: r.endsPerTurn || 1,
     };
   }
+  const scoreAfter = (m, n) => m.a.slice(0, n * m.r.perEnd).reduce((x, t) => x + val(t), 0);
 
   // ---------- views ----------
   function renderHeader() {
@@ -98,7 +102,7 @@
         <div class="venues">
           ${window.VENUES.map((v) => `
             <button class="venue" data-id="${v.id}" data-theme="${v.theme}">
-              <span class="v-emoji">${v.emoji}</span>
+              <svg class="v-target" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="48" fill="#f4f4f0"/><circle cx="50" cy="50" r="38" fill="#1b1b1b"/><circle cx="50" cy="50" r="28" fill="var(--a)"/><circle cx="50" cy="50" r="18" fill="var(--b)"/><circle cx="50" cy="50" r="8" fill="#ffd43b"/></svg>
               <span class="v-name">${esc(v.name)}</span>
               <span class="v-sub">${esc(v.sub)}</span>
               <span class="v-bar"></span>
@@ -166,20 +170,30 @@
   // ----- leaderboard -----
   function renderBoard() {
     const rows = Object.entries(lastData).map(([k, s]) => ({ k, s, m: summarise(s) })).filter((x) => x.m);
-    rows.sort((a, b) => b.m.total - a.m.total || b.m.xs - a.m.xs || b.m.golds - a.m.golds);
+    // like-for-like: compare everyone on the same round after the same number of ends
+    const common = {};
+    rows.forEach((x) => { const id = JSON.stringify(x.s.def || x.s.round); if (x.m.ends > 0) common[id] = Math.min(common[id] ?? 1e9, x.m.ends); });
+    const maxEnds = {};
+    rows.forEach((x) => { const id = JSON.stringify(x.s.def || x.s.round); maxEnds[id] = Math.max(maxEnds[id] || 0, x.m.ends); });
+    rows.forEach((x) => { const id = JSON.stringify(x.s.def || x.s.round); x.n = common[id] ?? 0; x.lead = maxEnds[id];
+      x.shown = likeForLike ? scoreAfter(x.m, x.n) : x.m.total; });
+    rows.sort((a, b) => b.shown - a.shown || b.m.xs - a.m.xs || b.m.golds - a.m.golds);
     const panel = $("#panel");
     if (!rows.length) { panel.innerHTML = `<div class="card empty">No scores yet. Be the first on the line! 🎯</div>`; return; }
-    panel.innerHTML = `<div class="board">${rows.map((x, i) => {
+    panel.innerHTML = `<div class="lfl"><label><input type="checkbox" id="lfl" ${likeForLike ? "checked" : ""}> Like-for-like: compare everyone after the same number of ends</label></div>
+      <div class="board">${rows.map((x, i) => {
       const pct = Math.round((x.m.arrows / x.m.of) * 100);
       const medal = ["🥇", "🥈", "🥉"][i] || i + 1;
       return `<article class="row ${x.k === me.key ? "me" : ""} ${i < 3 ? "podium p" + (i + 1) : ""}">
         <div class="rank">${medal}</div>
         <div class="who2"><b>${esc(x.s.name)}</b><span>${esc(x.m.r.name)} · ${x.m.arrows}/${x.m.of} arrows</span>
+          <span class="ends ${x.m.ends < x.lead ? "behind" : ""}">${likeForLike ? `Compared after ${x.n} end${x.n === 1 ? "" : "s"}` : `Ends shot ${x.m.ends}/${x.m.totalEnds}`}${x.m.perTurn > 1 && !likeForLike ? ` · Turn ${Math.ceil(x.m.arrows / (x.m.r.perEnd * x.m.perTurn))}/${Math.ceil(x.m.totalEnds / x.m.perTurn)}` : ""}</span>
           <div class="prog"><i style="width:${pct}%"></i></div></div>
         <div class="stats"><span>${x.m.hits} hits</span><span>${x.m.golds} golds</span>${x.m.xs ? `<span>${x.m.xs} X</span>` : ""}</div>
-        <div class="total">${x.m.total}<small>/ ${x.m.max}</small></div>
+        <div class="total">${x.shown}<small>/ ${likeForLike ? x.n * x.m.r.perEnd * (x.m.r.zone === "five" ? 9 : x.m.r.zone === "worc" ? 5 : 10) : x.m.max}</small></div>
       </article>`;
     }).join("")}</div><p class="note c">Updates automatically${window.Store.shared ? "" : " (demo mode: this browser only)"}.</p>`;
+    $("#lfl").onchange = (e) => { likeForLike = e.target.checked; renderBoard(); };
   }
 
   // ----- scorecard -----
@@ -190,25 +204,27 @@
     const m = summarise(myScore), r = m.r;
     const done = m.arrows >= m.of;
     const endIdx = Math.floor(m.arrows / r.perEnd), inEnd = m.arrows % r.perEnd;
+    const pt = m.perTurn, turnSize = r.perEnd * pt, turnIdx = Math.floor(m.arrows / turnSize), inTurn = m.arrows % turnSize;
+    const turnSlots = Math.min(turnSize, m.of - turnIdx * turnSize), totalTurns = Math.ceil(m.totalEnds / pt);
     const keys = window.ZONES[r.zone];
     // section progress
     let acc = 0;
     const secs = r.sections.map((s) => { const from = acc; acc += s.arrows;
       const part = m.a.slice(from, acc); return { ...s, from, part, sum: part.reduce((x, t) => x + val(t), 0) }; });
     const curSec = secs.find((s) => m.arrows >= s.from && m.arrows < s.from + s.arrows) || secs[secs.length - 1];
-    const cur = m.a.slice(endIdx * r.perEnd, endIdx * r.perEnd + inEnd);
+    const cur = m.a.slice(turnIdx * turnSize, turnIdx * turnSize + inTurn);
 
     panel.innerHTML = `
       <div class="setup-chip"><span>⚙️ ${esc(r.name)} · ${r.perEnd} arrows/end · set by <b>${esc(config.adminName || "admin")}</b></span>${config.admin === me.key ? `<button class="link" id="edit">Edit setup</button>` : ""}</div>
       <div class="card scorehead">
-        <div><span class="lbl">${esc(r.name)}</span><span class="sub">${esc(curSec.label)} · End ${Math.min(endIdx + 1, Math.ceil(m.of / r.perEnd))} of ${Math.ceil(m.of / r.perEnd)}</span></div>
+        <div><span class="lbl">${esc(r.name)}</span><span class="sub">${esc(curSec.label)} · ${pt > 1 ? `Turn ${Math.min(turnIdx + 1, totalTurns)}/${totalTurns} · ` : ""}End ${Math.min(endIdx + 1, m.totalEnds)}/${m.totalEnds} <b class="shot">(${m.ends} shot)</b></span></div>
         <div class="big">${m.total}<small>/ ${m.max}</small></div>
       </div>
       ${done ? `<div class="card done">🏆 Round complete! Final score <b>${m.total}</b> (${m.golds} golds${m.xs ? `, ${m.xs} X` : ""}).</div>` : `
       <div class="card entry">
-        <div class="slots">${Array.from({ length: r.perEnd }, (_, i) => {
+        <div class="slots">${Array.from({ length: turnSlots }, (_, i) => {
           const t = cur[i]; const kc = t ? (keys.find((k) => k[0] === t) || [])[2] : "";
-          return `<span class="slot ${t ? "f " + kc : ""} ${i === inEnd ? "next" : ""}">${t || ""}</span>`; }).join("")}</div>
+          return `<span class="slot ${t ? "f " + kc : ""} ${i === inTurn ? "next" : ""} ${pt > 1 && i > 0 && i % r.perEnd === 0 ? "gap" : ""}">${t || ""}</span>`; }).join("")}</div>
         <div class="keys z-${r.zone}">${keys.map(([l, , c]) => `<button class="key ${c}" data-k="${l}">${l}</button>`).join("")}</div>
         <div class="actions"><button class="btn ghost" id="undo" ${m.arrows ? "" : "disabled"}>⌫ Undo arrow</button></div>
       </div>`}
@@ -220,10 +236,12 @@
           const rows = Array.from({ length: nEnds }, (_, e) => {
             const a = s.part.slice(e * r.perEnd, (e + 1) * r.perEnd); if (!a.length) return "";
             const es = a.reduce((x, t) => x + val(t), 0); run += es;
-            return `<tr><td>${e + 1}</td><td class="arr">${a.map((t) => `<i class="a ${(keys.find((k) => k[0] === t) || [])[2]}">${t}</i>`).join("")}</td><td>${es}</td><td>${run}</td></tr>`;
+            const tc = pt > 1 && e % pt === 0 ? (() => { const ta = s.part.slice(e * r.perEnd, (e + pt) * r.perEnd);
+              return `<td class="turn" rowspan="${Math.min(pt, nEnds - e)}">T${e / pt + 1}<b>${ta.reduce((x, t) => x + val(t), 0)}</b></td>`; })() : "";
+            return `<tr class="${pt > 1 && e % pt === 0 ? "tstart" : ""}">${pt > 1 ? tc : ""}<td>${e + 1}</td><td class="arr">${a.map((t) => `<i class="a ${(keys.find((k) => k[0] === t) || [])[2]}">${t}</i>`).join("")}</td><td>${es}</td><td>${run}</td></tr>`;
           }).join("");
           return `<div class="sec"><div class="sec-h"><b>${esc(s.label)}</b><span>${s.sum} · ${s.part.length}/${s.arrows}</span></div>
-            ${rows ? `<table><thead><tr><th>End</th><th>Arrows</th><th>End</th><th>Run</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">Not started</p>`}</div>`;
+            ${rows ? `<table><thead><tr>${pt > 1 ? "<th>Turn</th>" : ""}<th>End</th><th>Arrows</th><th>End</th><th>Run</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">Not started</p>`}</div>`;
         }).join("")}
         <div class="actions"><button class="btn ghost danger" id="reset">Clear my scorecard</button></div>
       </div>`;
@@ -251,25 +269,26 @@
   }
 
   function buildDef(f) {
+    let ept = f.ept || 1;
     const zl = { five: "5-zone", ten: "10-zone" };
-    if (f.mode.startsWith("q:")) { const [, d, z] = f.mode.split(":"); f = { dist: d, unit: "m", zone: z, ends: 5, perEnd: 6 }; }
+    if (f.mode.startsWith("q:")) { const [, d, z] = f.mode.split(":"); f = { dist: d, unit: "m", zone: z, ends: 10, perEnd: 3 }; ept = 2; }
     else if (f.mode !== "custom") return window.roundById(f.mode);
     const label = `${f.dist} ${f.unit}`;
     return { id: "custom", name: `${label} · ${zl[f.zone]}`, group: "Custom", zone: f.zone, perEnd: f.perEnd,
-      sections: [{ label, arrows: f.ends * f.perEnd }] };
+      endsPerTurn: ept, sections: [{ label, arrows: f.ends * f.perEnd }] };
   }
 
   function renderSetup() {
     const c = config && config.def && config.def.id === "custom" ? config.def : null;
     const dist = c ? parseFloat(c.sections[0].label) : 12, unit = c ? c.sections[0].label.split(" ")[1] : "m";
-    const zone = c ? c.zone : "ten", perEnd = c ? c.perEnd : 6, ends = c ? c.sections[0].arrows / c.perEnd : 5;
+    const zone = c ? c.zone : "ten", perEnd = c ? c.perEnd : 3, ends = c ? c.sections[0].arrows / c.perEnd : 10, ept0 = c ? (c.endsPerTurn || 1) : 2;
     const groups = [...new Set(window.ROUNDS.map((r) => r.group))];
     const curMode = config && config.def && config.def.id !== "custom" ? config.def.id : "custom";
     const startMode = config && config.def ? curMode : "q:10:ten";
     $("#panel").innerHTML = `<form class="card setup" id="setup">
       <h3>${editing ? "Edit tonight's setup" : "Set up tonight's session"}</h3>
       <p class="note" style="margin-top:-6px">${editing ? "Archers who haven't shot yet will switch to the new setup." : "You're first here, so you're the admin. Everyone who joins this venue and date will use this setup."}</p>
-      <label>Round<select id="mode"><optgroup label="Quick setups (6 arrows × 5 ends)">${[10, 12, 15].flatMap((d) => [["ten", "10-zone"], ["five", "5-zone"]].map(([z, zl]) => `<option value="q:${d}:${z}">${d} m · 6 arrows × 5 ends · ${zl}</option>`)).join("")}</optgroup>
+      <label>Round<select id="mode"><optgroup label="Quick setups (5 turns × 6 arrows = 2 ends of 3)">${[10, 12, 15].flatMap((d) => [["ten", "10-zone"], ["five", "5-zone"]].map(([z, zl]) => `<option value="q:${d}:${z}">${d} m · 5 turns × 6 arrows · ${zl}</option>`)).join("")}</optgroup>
         <optgroup label="Custom"><option value="custom">Custom (pick distance, target and ends)</option></optgroup>
         ${groups.map((g) => `<optgroup label="${g}">${window.ROUNDS.filter((r) => r.group === g).map((r) => { const t = window.roundTotals(r);
           return `<option value="${r.id}">${esc(r.name)} · ${t.arrows} arrows</option>`; }).join("")}</optgroup>`).join("")}</select></label>
@@ -281,12 +300,13 @@
         <label>Target zones<select id="zone"><option value="ten">10-zone (X, 10 to 1)</option><option value="five">5-zone (9, 7, 5, 3, 1)</option></select></label>
         <div class="two"><label>Number of ends<input id="ends" type="number" min="1" max="60" value="${ends}" required></label>
         <label>Arrows per end<select id="pe">${[3, 5, 6].map((n) => `<option>${n}</option>`).join("")}</select></label></div>
+        <label>Ends per turn<select id="ept"><option value="1">1 end per turn</option><option value="2">2 ends per turn (e.g. 6 arrows = 2 ends of 3)</option></select></label>
       </div>
       <p class="note" id="sum"></p>
       <div class="actions" style="gap:10px"><button class="btn primary" type="submit">${editing ? "Save setup" : "Start session"} →</button>
       ${editing ? `<button class="btn ghost" type="button" id="cancel">Cancel</button>` : ""}</div></form>`;
-    $("#mode").value = startMode; $("#unit").value = unit; $("#zone").value = zone; $("#pe").value = perEnd;
-    const read = () => ({ mode: $("#mode").value, dist: $("#dist").value, unit: $("#unit").value, zone: $("#zone").value, ends: +$("#ends").value, perEnd: +$("#pe").value });
+    $("#mode").value = startMode; $("#unit").value = unit; $("#zone").value = zone; $("#pe").value = perEnd; $("#ept").value = ept0;
+    const read = () => ({ mode: $("#mode").value, dist: $("#dist").value, unit: $("#unit").value, zone: $("#zone").value, ends: +$("#ends").value, perEnd: +$("#pe").value, ept: +$("#ept").value });
     const upd = () => { const f = read(); $("#customBox").hidden = f.mode !== "custom";
       const d = buildDef(f), t = window.roundTotals(d); $("#sum").textContent = `${d.name} · ${t.arrows} arrows · max ${t.max}`;
       document.querySelectorAll(".chip").forEach((b) => b.classList.toggle("on", b.dataset.d === String(f.dist))); };

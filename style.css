@@ -142,3 +142,17 @@ td { padding: 6px; border-top: 1px solid var(--line); } td:nth-child(n+3) { font
 .chip { padding: 8px 16px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); font-weight: 700; }
 .chip.on { background: var(--a); color: var(--on-a); border-color: var(--a); }
 [hidden] { display: none !important; }
+
+/* ends / turns */
+.ends { display: inline-block; margin-top: 2px; font-weight: 600; color: var(--a) !important; }
+.ends.behind { color: var(--b) !important; }
+.shot { color: var(--a); font-weight: 600; }
+.lfl { margin-top: 14px; padding: 10px 14px; border: 1px dashed var(--line); border-radius: 12px; }
+.lfl label { display: flex; align-items: center; gap: 10px; margin: 0; color: var(--text); }
+.lfl input { width: auto; margin: 0; }
+.slot.gap { margin-left: 14px; }
+.turn { text-align: center; background: color-mix(in srgb, var(--a) 12%, transparent); border-right: 1px solid var(--line); font-weight: 700; color: var(--muted); }
+.turn b { display: block; color: var(--a); font-size: 1.1rem; }
+tr.tstart td { border-top: 2px solid var(--line); }
+
+.v-target { width: 52px; height: 52px; margin-bottom: 6px; filter: drop-shadow(0 0 12px var(--glow)); }
