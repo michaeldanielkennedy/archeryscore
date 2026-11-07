@@ -12,6 +12,8 @@
   let myScore = null;       // {name, round, arrows:"X,9,M", updated}
   let timer = null;
   let tab = "score";
+  let config = null;        // session setup chosen by the admin: {def, admin, adminName}
+  let editing = false;
 
   function toast(msg) {
     const t = $("#toast"); t.textContent = msg; t.classList.add("show");
@@ -28,7 +30,7 @@
   const toks = (s) => (s.arrows ? s.arrows.split(",") : []);
   const val = (t) => (t === "X" ? 10 : t === "M" ? 0 : +t);
   function summarise(s) {
-    const r = window.roundById(s.round); if (!r) return null;
+    const r = s.def || window.roundById(s.round); if (!r) return null;
     const a = toks(s), tot = window.roundTotals(r);
     const total = a.reduce((x, t) => x + val(t), 0);
     const top = r.zone === "worc" ? 5 : 9;
@@ -49,7 +51,7 @@
     $("#logout").onclick = logout;
   }
   function logout() {
-    stopPoll(); me = null; sess = null; myScore = null;
+    stopPoll(); me = null; sess = null; myScore = null; config = null;
     try { localStorage.removeItem("archery.me"); } catch {}
     setTheme("default"); renderHeader(); viewLogin();
   }
@@ -88,7 +90,7 @@
   }
 
   function viewPick() {
-    setTheme("default"); stopPoll(); sess = null; myScore = null;
+    setTheme("default"); stopPoll(); sess = null; myScore = null; config = null; editing = false;
     let chosen = null;
     app.innerHTML = `
       <section class="pick">
@@ -125,10 +127,13 @@
     setTheme(venue.theme);
     app.innerHTML = `<div class="loading">Loading session…</div>`;
     try {
-      const data = await window.Store.getSession(sess.id);
+      const [data, cfg] = await Promise.all([window.Store.getSession(sess.id), window.Store.getConfig(sess.id)]);
+      config = cfg; editing = false;
       myScore = data[me.key] || null;
       tab = "score";
-      viewSession(data);
+      lastData = data;
+      ensureScore();
+      viewSession(lastData);
       startPoll();
     } catch (ex) { toast(ex.message); viewPick(); }
   }
@@ -180,20 +185,8 @@
   // ----- scorecard -----
   function renderScore() {
     const panel = $("#panel");
-    if (!myScore) {
-      const groups = [...new Set(window.ROUNDS.map((r) => r.group))];
-      panel.innerHTML = `<div class="card">
-        <h3>Choose your round</h3>
-        <select id="round">${groups.map((g) => `<optgroup label="${g}">${window.ROUNDS.filter((r) => r.group === g).map((r) => {
-          const t = window.roundTotals(r);
-          return `<option value="${r.id}">${esc(r.name)} · ${t.arrows} arrows · max ${t.max}</option>`; }).join("")}</optgroup>`).join("")}</select>
-        <button class="btn primary" id="start">Start scoring →</button></div>`;
-      $("#start").onclick = () => {
-        myScore = { name: me.name, round: $("#round").value, arrows: "", updated: Date.now() };
-        save(); renderScore();
-      };
-      return;
-    }
+    if (!config || editing) { renderSetup(); return; }
+    ensureScore();
     const m = summarise(myScore), r = m.r;
     const done = m.arrows >= m.of;
     const endIdx = Math.floor(m.arrows / r.perEnd), inEnd = m.arrows % r.perEnd;
@@ -206,6 +199,7 @@
     const cur = m.a.slice(endIdx * r.perEnd, endIdx * r.perEnd + inEnd);
 
     panel.innerHTML = `
+      <div class="setup-chip"><span>⚙️ ${esc(r.name)} · ${r.perEnd} arrows/end · set by <b>${esc(config.adminName || "admin")}</b></span>${config.admin === me.key ? `<button class="link" id="edit">Edit setup</button>` : ""}</div>
       <div class="card scorehead">
         <div><span class="lbl">${esc(r.name)}</span><span class="sub">${esc(curSec.label)} · End ${Math.min(endIdx + 1, Math.ceil(m.of / r.perEnd))} of ${Math.ceil(m.of / r.perEnd)}</span></div>
         <div class="big">${m.total}<small>/ ${m.max}</small></div>
@@ -231,7 +225,7 @@
           return `<div class="sec"><div class="sec-h"><b>${esc(s.label)}</b><span>${s.sum} · ${s.part.length}/${s.arrows}</span></div>
             ${rows ? `<table><thead><tr><th>End</th><th>Arrows</th><th>End</th><th>Run</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">Not started</p>`}</div>`;
         }).join("")}
-        <div class="actions"><button class="btn ghost danger" id="reset">Start a different round</button></div>
+        <div class="actions"><button class="btn ghost danger" id="reset">Clear my scorecard</button></div>
       </div>`;
 
     panel.querySelectorAll(".key").forEach((b) => b.onclick = () => {
@@ -240,9 +234,70 @@
       if (summarise(myScore).arrows >= m.of) toast("Round complete! 🏆");
     });
     const u = $("#undo"); if (u) u.onclick = () => { const a = toks(myScore); a.pop(); myScore.arrows = a.join(","); save(); renderScore(); };
-    $("#reset").onclick = async () => {
-      if (!confirm("Remove your current scorecard for this venue and date?")) return;
-      await window.Store.deleteScore(sess.id, me.key); delete lastData[me.key]; myScore = null; renderPanel();
+    const ed = $("#edit"); if (ed) ed.onclick = () => { editing = true; renderScore(); };
+    $("#reset").onclick = () => {
+      if (!confirm("Clear all your arrows and start this round again?")) return;
+      myScore = null; ensureScore(); renderScore();
+    };
+  }
+
+  // Create my scorecard from the session setup (or adopt a changed setup if I haven't shot yet)
+  function ensureScore() {
+    if (!config || !config.def) return;
+    if (!myScore || (!myScore.arrows && JSON.stringify(myScore.def) !== JSON.stringify(config.def))) {
+      myScore = { name: me.name, round: config.def.id, def: config.def, arrows: "", updated: Date.now() };
+      save();
+    }
+  }
+
+  function buildDef(f) {
+    const zl = { five: "5-zone", ten: "10-zone" };
+    if (f.mode !== "custom") return window.roundById(f.mode);
+    const label = `${f.dist} ${f.unit}`;
+    return { id: "custom", name: `${label} · ${zl[f.zone]}`, group: "Custom", zone: f.zone, perEnd: f.perEnd,
+      sections: [{ label, arrows: f.ends * f.perEnd }] };
+  }
+
+  function renderSetup() {
+    const c = config && config.def && config.def.id === "custom" ? config.def : null;
+    const dist = c ? parseFloat(c.sections[0].label) : 12, unit = c ? c.sections[0].label.split(" ")[1] : "m";
+    const zone = c ? c.zone : "ten", perEnd = c ? c.perEnd : 6, ends = c ? c.sections[0].arrows / c.perEnd : 5;
+    const groups = [...new Set(window.ROUNDS.map((r) => r.group))];
+    const curMode = config && config.def && config.def.id !== "custom" ? config.def.id : "custom";
+    $("#panel").innerHTML = `<form class="card setup" id="setup">
+      <h3>${editing ? "Edit tonight's setup" : "Set up tonight's session"}</h3>
+      <p class="note" style="margin-top:-6px">${editing ? "Archers who haven't shot yet will switch to the new setup." : "You're first here, so you're the admin. Everyone who joins this venue and date will use this setup."}</p>
+      <label>Round<select id="mode"><option value="custom">Custom (pick distance, target and ends)</option>
+        ${groups.map((g) => `<optgroup label="${g}">${window.ROUNDS.filter((r) => r.group === g).map((r) => { const t = window.roundTotals(r);
+          return `<option value="${r.id}">${esc(r.name)} · ${t.arrows} arrows</option>`; }).join("")}</optgroup>`).join("")}</select></label>
+      <div id="customBox">
+        <label>Distance
+          <div class="chips">${[10, 12, 15, 18, 20].map((d) => `<button type="button" class="chip" data-d="${d}">${d}</button>`).join("")}</div>
+          <div class="two"><input id="dist" type="number" min="1" max="200" step="any" value="${dist}" required>
+          <select id="unit"><option value="m">metres</option><option value="yd">yards</option></select></div></label>
+        <label>Target zones<select id="zone"><option value="ten">10-zone (X, 10 to 1)</option><option value="five">5-zone (9, 7, 5, 3, 1)</option></select></label>
+        <div class="two"><label>Number of ends<input id="ends" type="number" min="1" max="60" value="${ends}" required></label>
+        <label>Arrows per end<select id="pe">${[3, 5, 6].map((n) => `<option>${n}</option>`).join("")}</select></label></div>
+      </div>
+      <p class="note" id="sum"></p>
+      <div class="actions" style="gap:10px"><button class="btn primary" type="submit">${editing ? "Save setup" : "Start session"} →</button>
+      ${editing ? `<button class="btn ghost" type="button" id="cancel">Cancel</button>` : ""}</div></form>`;
+    $("#mode").value = curMode; $("#unit").value = unit; $("#zone").value = zone; $("#pe").value = perEnd;
+    const read = () => ({ mode: $("#mode").value, dist: $("#dist").value, unit: $("#unit").value, zone: $("#zone").value, ends: +$("#ends").value, perEnd: +$("#pe").value });
+    const upd = () => { const f = read(); $("#customBox").hidden = f.mode !== "custom";
+      const d = buildDef(f), t = window.roundTotals(d); $("#sum").textContent = `${d.name} · ${t.arrows} arrows · max ${t.max}`;
+      document.querySelectorAll(".chip").forEach((b) => b.classList.toggle("on", b.dataset.d === String(f.dist))); };
+    $("#setup").oninput = upd; $("#setup").onchange = upd;
+    document.querySelectorAll(".chip").forEach((b) => b.onclick = () => { $("#dist").value = b.dataset.d; upd(); });
+    const cn = $("#cancel"); if (cn) cn.onclick = () => { editing = false; renderScore(); };
+    upd();
+    $("#setup").onsubmit = async (e) => {
+      e.preventDefault();
+      const f = read(); if (f.mode === "custom" && !(f.ends >= 1 && +f.dist > 0)) return;
+      const admin = config && config.admin ? config.admin : me.key, adminName = config && config.adminName ? config.adminName : me.name;
+      const next = { def: buildDef(f), admin, adminName };
+      try { await window.Store.putConfig(sess.id, next); } catch (ex) { toast("Save failed: " + ex.message); return; }
+      config = next; editing = false; ensureScore(); renderScore(); toast("Session setup saved");
     };
   }
 
@@ -259,7 +314,9 @@
     timer = setInterval(async () => {
       if (!sess || document.hidden) return;
       try {
-        const d = await window.Store.getSession(sess.id);
+        const [d, cfg] = await Promise.all([window.Store.getSession(sess.id), window.Store.getConfig(sess.id)]);
+        const cfgChanged = JSON.stringify(cfg) !== JSON.stringify(config);
+        if (cfgChanged && !editing) { config = cfg; ensureScore(); if (tab === "score") renderScore(); }
         const mine = lastData[me.key]; d[me.key] = mine && (!d[me.key] || (mine.updated || 0) >= (d[me.key].updated || 0)) ? mine : d[me.key];
         if (!d[me.key]) delete d[me.key];
         lastData = d; if (tab === "board") renderPanel(); else $("#cnt") && ($("#cnt").textContent = Object.keys(d).length || "");

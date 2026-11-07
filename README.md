@@ -8,7 +8,7 @@ A live scoreboard for UK (Archery GB) rounds, themed per venue:
 | Lisburn Cathedral | Red |
 | Dagger Road | Green with a little yellow |
 
-Log in, pick a venue and date, choose a round (Portsmouth, WA 18m, Worcester, York, Hereford, St George, Windsor, National, WA 720 and more) and tap in each arrow. The **Leaderboard** tab shows everyone at the same venue on the same date, updating automatically.
+Log in and pick a venue and date. The **first person in becomes that night's admin** and sets up the session: either a standard round (Portsmouth, WA 18m, Worcester, York, Hereford, St George, Windsor, National, WA 720 and more) or a **custom** one (any distance such as 10, 12 or 15 m, 5-zone or 10-zone target, number of ends, arrows per end). Everyone who joins afterwards automatically gets that setup and just taps in each arrow. The admin can edit the setup later. The **Leaderboard** tab shows everyone at the same venue on the same date, updating automatically.
 
 It's a static site (no build step), so it runs on GitHub Pages.
 
@@ -36,7 +36,8 @@ GitHub Pages is static, so scores need somewhere to live. With `firebaseUrl` emp
 {
   "rules": {
     "users":    { "$u": { ".read": true, ".write": "!data.exists()" } },
-    "sessions": { ".read": true, ".write": true }
+    "sessions": { ".read": true, ".write": true },
+    "configs":  { ".read": true, ".write": true }
   }
 }
 ```

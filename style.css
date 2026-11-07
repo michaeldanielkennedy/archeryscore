@@ -133,3 +133,12 @@ td { padding: 6px; border-top: 1px solid var(--line); } td:nth-child(n+3) { font
   .key { height: 54px; } .slot { width: 42px; height: 42px; } .big { font-size: 2.2rem; }
 }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* session setup */
+.setup-chip { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 14px; padding: 8px 14px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); font-size: .85rem; color: var(--muted); }
+.setup-chip b { color: var(--text); }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.chips { display: flex; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.chip { padding: 8px 16px; border-radius: 99px; border: 1px solid var(--line); background: var(--panel); font-weight: 700; }
+.chip.on { background: var(--a); color: var(--on-a); border-color: var(--a); }
+[hidden] { display: none !important; }
