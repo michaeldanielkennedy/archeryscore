@@ -6,6 +6,6 @@
 //   firebaseUrl: "https://my-archery-default-rtdb.europe-west1.firebasedatabase.app"
 // See README.md for the step-by-step setup and security rules.
 window.ARCHERY_CONFIG = {
-  firebaseUrl: "",
+  firebaseUrl: "https://archery-4fa4b-default-rtdb.europe-west1.firebasedatabase.app",
   pollSeconds: 4,
 };
