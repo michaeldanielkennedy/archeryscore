@@ -163,3 +163,4 @@ tr.tstart td { border-top: 2px solid var(--line); }
 .archers .chips { margin: 0 0 12px; }
 .archers .add { grid-template-columns: 1fr auto; align-items: center; }
 .archers .add input { margin: 0; }
+.ver { text-align: center; color: var(--muted); font-size: .75rem; padding: 20px 0 80px; opacity: .7; }

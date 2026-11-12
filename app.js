@@ -436,6 +436,7 @@
   $("#brand").onclick = (e) => { e.preventDefault(); if (me) viewPick(); };
   try { me = JSON.parse(localStorage.getItem("archery.me")); } catch { me = null; }
   if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
+  $("#ver").textContent = "v" + ((window.ARCHERY_CONFIG || {}).version || "?");
   renderHeader();
   let resume = false; try { resume = localStorage.getItem("archery.manual") === "1"; } catch {}
   resume ? enterManual() : me && me.key ? viewPick() : viewLogin();
