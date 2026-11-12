@@ -15,6 +15,9 @@
   let config = null;        // session setup chosen by the admin: {def, admin, adminName}
   let editing = false;
   let likeForLike = false;
+  let manual = false;       // "one phone" mode: everything stays on this device
+  let realMe = null;        // logged-in user to restore when leaving manual mode
+  const S = () => (manual ? window.ManualStore : window.Store);
 
   function toast(msg) {
     const t = $("#toast"); t.textContent = msg; t.classList.add("show");
@@ -49,7 +52,7 @@
   // ---------- views ----------
   function renderHeader() {
     const w = $("#who");
-    if (!me) { w.hidden = true; return; }
+    if (!me || manual) { w.hidden = true; return; }
     w.hidden = false;
     w.innerHTML = `<span class="avatar">${esc(me.name[0].toUpperCase())}</span><span class="nm">${esc(me.name)}</span><button class="link" id="logout">Log out</button>`;
     $("#logout").onclick = logout;
@@ -59,6 +62,9 @@
     try { localStorage.removeItem("archery.me"); } catch {}
     setTheme("default"); renderHeader(); viewLogin();
   }
+
+  const manualBtn = () => `<button class="btn ghost manual-btn" type="button" id="manualGo">${window.ManualStore.hasData() ? "Resume" : "No internet? Score"} on one phone</button>`;
+  function wireManual() { const b = $("#manualGo"); if (b) b.onclick = enterManual; }
 
   function viewLogin() {
     setTheme("default"); stopPoll();
@@ -74,8 +80,10 @@
         <label>PIN (4+ digits)<input id="lp" required inputmode="numeric" pattern="[0-9]{4,}" maxlength="12" type="password" placeholder="••••"></label>
         <button class="btn primary" type="submit">Enter the range →</button>
         <p class="hint" id="lerr"></p>
+        ${manualBtn()}
         ${demo ? `<p class="note">Demo mode: scores are stored in this browser only. See README to turn on shared live scoring.</p>` : ""}
       </form>`;
+    wireManual();
     $("#loginForm").onsubmit = async (e) => {
       e.preventDefault();
       const name = $("#ln").value.trim().replace(/\s+/g, " "), pin = $("#lp").value;
@@ -112,6 +120,7 @@
           <label>Date<input type="date" id="date" value="${today()}"></label>
           <button class="btn primary" id="go" disabled>Join session →</button>
         </div>
+        ${manualBtn()}
       </section>`;
     app.querySelectorAll(".venue").forEach((b) => b.onclick = () => {
       app.querySelectorAll(".venue").forEach((x) => x.classList.remove("on"));
@@ -119,10 +128,52 @@
       setTheme(window.VENUES.find((v) => v.id === chosen).theme);
       $("#go").disabled = false;
     });
+    wireManual();
     $("#go").onclick = () => {
       const date = $("#date").value; if (!chosen || !date) return;
       joinSession(chosen, date);
     };
+  }
+
+  // ---------- manual mode (one phone, no network) ----------
+  async function enterManual() {
+    realMe = me; manual = true; stopPoll(); setTheme("default"); renderHeader();
+    try { localStorage.setItem("archery.manual", "1"); } catch {}
+    sess = { venue: { name: "Score on one phone" }, date: today(), id: "manual" };
+    const [data, cfg] = await Promise.all([S().getSession("manual"), S().getConfig("manual")]);
+    config = cfg; editing = false; tab = "score"; lastData = data;
+    const first = Object.keys(data)[0];
+    me = first ? { name: data[first].name, key: first } : null; myScore = first ? data[first] : null;
+    viewSession(lastData);
+  }
+  function exitManual() {
+    manual = false; me = realMe; realMe = null; sess = null; myScore = null; config = null; editing = false;
+    try { localStorage.removeItem("archery.manual"); } catch {}
+    renderHeader(); me ? viewPick() : viewLogin();
+  }
+  function addArcher(name) {
+    name = name.trim().replace(/\s+/g, " "); if (!name) return;
+    let key = userKey(name) || "archer", k = key, i = 2;
+    while (lastData[k]) k = `${key}-${i++}`;
+    me = { name, key: k }; myScore = null; editing = false;
+    ensureScore(); renderPanel();
+  }
+  function removeArcher(key) {
+    delete lastData[key]; S().deleteScore("manual", key);
+    const next = Object.keys(lastData)[0];
+    me = next ? { name: lastData[next].name, key: next } : null; myScore = next ? lastData[next] : null;
+    renderPanel();
+  }
+  function renderArchers() {
+    const box = $("#archers"); if (!box) return;
+    if (!config || editing || tab !== "score") { box.innerHTML = ""; return; }
+    const ks = Object.keys(lastData);
+    box.innerHTML = `<div class="card archers"><div class="chips">${ks.map((k) => `<button type="button" class="chip ${me && me.key === k ? "on" : ""}" data-k="${esc(k)}">${esc(lastData[k].name)}</button>`).join("")}</div>
+      <form id="addArcher" class="two add" autocomplete="off"><input id="an" maxlength="24" placeholder="${ks.length ? "Add another archer" : "Archer's name"}" autocapitalize="words"><button class="btn primary" type="submit">+ Add</button></form></div>`;
+    box.querySelectorAll(".chip").forEach((b) => b.onclick = () => {
+      me = { name: lastData[b.dataset.k].name, key: b.dataset.k }; myScore = lastData[b.dataset.k]; renderPanel();
+    });
+    $("#addArcher").onsubmit = (e) => { e.preventDefault(); addArcher($("#an").value); };
   }
 
   async function joinSession(venueId, date) {
@@ -146,17 +197,18 @@
     app.innerHTML = `
       <section class="session">
         <div class="s-head">
-          <button class="link" id="back">← Change venue/date</button>
+          <button class="link" id="back">${manual ? "← Exit one-phone mode" : "← Change venue/date"}</button>
           <h2>${esc(sess.venue.name)}</h2>
-          <p class="when">${prettyDate(sess.date)} <span class="live"><i></i>${window.Store.shared ? "Live" : "Local"}</span></p>
+          <p class="when">${prettyDate(sess.date)} <span class="live"><i></i>${manual || !window.Store.shared ? "Saved on this phone" : "Live"}</span></p>
         </div>
         <nav class="tabs">
           <button data-t="score" class="${tab === "score" ? "on" : ""}">My scorecard</button>
           <button data-t="board" class="${tab === "board" ? "on" : ""}">Leaderboard <span class="count" id="cnt"></span></button>
         </nav>
+        <div id="archers"></div>
         <div id="panel"></div>
       </section>`;
-    $("#back").onclick = viewPick;
+    $("#back").onclick = manual ? exitManual : viewPick;
     app.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => { tab = b.dataset.t; viewSession(lastData); });
     lastData = data; renderPanel();
   }
@@ -164,7 +216,35 @@
 
   function renderPanel() {
     $("#cnt").textContent = Object.keys(lastData).length || "";
-    if (tab === "board") renderBoard(); else renderScore();
+    if (manual) {
+      renderArchers();
+      if (tab === "score" && config && !editing && !me) { $("#panel").innerHTML = `<div class="card empty">Add the first archer above to start scoring.</div>`; return; }
+    }
+    if (tab === "board") { renderBoard(); if (manual) renderUpload(); } else renderScore();
+  }
+
+  // Send this phone's scores to the live board once there is a connection.
+  function renderUpload() {
+    const panel = $("#panel"), card = document.createElement("div"); card.className = "card upload";
+    const n = Object.keys(lastData).length;
+    if (!window.Store.shared) { card.innerHTML = `<p class="note">Live scoring isn't set up for this site, so there's nowhere to upload to.</p>`; panel.append(card); return; }
+    card.innerHTML = `<h3>Upload to live board</h3>
+      <p class="note" style="margin-top:-6px">When you're back online, add these ${n} archer${n === 1 ? "" : "s"} to a venue's live leaderboard. Uploading again just updates them.</p>
+      <div class="two"><label>Venue<select id="upv">${window.VENUES.map((v) => `<option value="${v.id}">${esc(v.name)}</option>`).join("")}</select></label>
+      <label>Date<input type="date" id="upd" value="${sess.date}"></label></div>
+      <div class="actions"><button class="btn primary" id="upgo" ${n ? "" : "disabled"}>Upload scores →</button></div>`;
+    panel.append(card);
+    $("#upgo").onclick = async () => {
+      const vid = $("#upv").value, date = $("#upd").value; if (!date) return;
+      const sid = `${vid}_${date}`, btn = $("#upgo"); btn.disabled = true; btn.textContent = "Uploading…";
+      try {
+        const cfg = await window.Store.getConfig(sid);
+        if (!cfg && config) await window.Store.putConfig(sid, { def: config.def, admin: (realMe && realMe.key) || "manual", adminName: (realMe && realMe.name) || "one-phone scorer" });
+        await Promise.all(Object.entries(lastData).map(([k, sc]) => window.Store.putScore(sid, `m-${k}`, { ...sc, manual: true, updated: Date.now() })));
+        toast(`Uploaded ${n} archer${n === 1 ? "" : "s"} to ${window.VENUES.find((v) => v.id === vid).name}`);
+      } catch (ex) { toast("Upload failed: " + (ex.message || "no connection")); }
+      btn.disabled = false; btn.textContent = "Upload scores →";
+    };
   }
 
   // ----- leaderboard -----
@@ -179,7 +259,7 @@
       x.shown = likeForLike ? scoreAfter(x.m, x.n) : x.m.total; });
     rows.sort((a, b) => b.shown - a.shown || b.m.xs - a.m.xs || b.m.golds - a.m.golds);
     const panel = $("#panel");
-    if (!rows.length) { panel.innerHTML = `<div class="card empty">No scores yet. Be the first on the line! 🎯</div>`; return; }
+    if (!rows.length) { panel.innerHTML = `<div class="card empty">No scores yet. ${manual ? "Add archers on the scorecard tab." : "Be the first on the line!"} 🎯</div>`; return; }
     panel.innerHTML = `<div class="lfl"><label><input type="checkbox" id="lfl" ${likeForLike ? "checked" : ""}> Like-for-like: compare everyone after the same number of ends</label></div>
       <div class="board">${rows.map((x, i) => {
       const pct = Math.round((x.m.arrows / x.m.of) * 100);
@@ -192,8 +272,8 @@
         <div class="stats"><span>${x.m.hits} hits</span><span>${x.m.golds} golds</span>${x.m.xs ? `<span>${x.m.xs} X</span>` : ""}</div>
         <div class="total">${x.shown}<small>/ ${likeForLike ? x.n * x.m.r.perEnd * (x.m.r.zone === "five" ? 9 : x.m.r.zone === "worc" ? 5 : 10) : x.m.max}</small></div>
       </article>`;
-    }).join("")}</div><p class="note c">Updates automatically${window.Store.shared ? "" : " (demo mode: this browser only)"}.</p>`;
-    $("#lfl").onchange = (e) => { likeForLike = e.target.checked; renderBoard(); };
+    }).join("")}</div><p class="note c">${manual ? "Saved on this phone only." : `Updates automatically${window.Store.shared ? "" : " (demo mode: this browser only)"}.`}</p>`;
+    $("#lfl").onchange = (e) => { likeForLike = e.target.checked; renderPanel(); };
   }
 
   // ----- scorecard -----
@@ -215,7 +295,7 @@
     const cur = m.a.slice(turnIdx * turnSize, turnIdx * turnSize + inTurn);
 
     panel.innerHTML = `
-      <div class="setup-chip"><span>⚙️ ${esc(r.name)} · ${r.perEnd} arrows/end · set by <b>${esc(config.adminName || "admin")}</b></span>${config.admin === me.key ? `<button class="link" id="edit">Edit setup</button>` : ""}</div>
+      <div class="setup-chip"><span>⚙️ ${esc(r.name)} · ${r.perEnd} arrows/end · ${manual ? "" : `set by <b>${esc(config.adminName || "admin")}</b>`}</span>${manual || config.admin === me.key ? `<button class="link" id="edit">Edit setup</button>` : ""}</div>
       <div class="card scorehead">
         <div><span class="lbl">${esc(r.name)}</span><span class="sub">${esc(curSec.label)} · ${pt > 1 ? `Turn ${Math.min(turnIdx + 1, totalTurns)}/${totalTurns} · ` : ""}End ${Math.min(endIdx + 1, m.totalEnds)}/${m.totalEnds} <b class="shot">(${m.ends} shot)</b></span></div>
         <div class="big">${m.total}<small>/ ${m.max}</small></div>
@@ -243,7 +323,7 @@
           return `<div class="sec"><div class="sec-h"><b>${esc(s.label)}</b><span>${s.sum} · ${s.part.length}/${s.arrows}</span></div>
             ${rows ? `<table><thead><tr>${pt > 1 ? "<th>Turn</th>" : ""}<th>End</th><th>Arrows</th><th>End</th><th>Run</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">Not started</p>`}</div>`;
         }).join("")}
-        <div class="actions"><button class="btn ghost danger" id="reset">Clear my scorecard</button></div>
+        <div class="actions"><button class="btn ghost danger" id="reset">Clear ${manual ? "this" : "my"} scorecard</button>${manual ? `<button class="btn ghost danger" id="remove">Remove archer</button>` : ""}</div>
       </div>`;
 
     panel.querySelectorAll(".key").forEach((b) => b.onclick = () => {
@@ -252,7 +332,8 @@
       if (summarise(myScore).arrows >= m.of) toast("Round complete! 🏆");
     });
     const u = $("#undo"); if (u) u.onclick = () => { const a = toks(myScore); a.pop(); myScore.arrows = a.join(","); save(); renderScore(); };
-    const ed = $("#edit"); if (ed) ed.onclick = () => { editing = true; renderScore(); };
+    const ed = $("#edit"); if (ed) ed.onclick = () => { editing = true; manual ? renderPanel() : renderScore(); };
+    const rm = $("#remove"); if (rm) rm.onclick = () => { if (confirm(`Remove ${me.name} and their scores?`)) removeArcher(me.key); };
     $("#reset").onclick = () => {
       if (!confirm("Clear all your arrows and start this round again?")) return;
       myScore = null; ensureScore(); renderScore();
@@ -261,7 +342,7 @@
 
   // Create my scorecard from the session setup (or adopt a changed setup if I haven't shot yet)
   function ensureScore() {
-    if (!config || !config.def) return;
+    if (!config || !config.def || !me) return;
     if (!myScore || (!myScore.arrows && JSON.stringify(myScore.def) !== JSON.stringify(config.def))) {
       myScore = { name: me.name, round: config.def.id, def: config.def, arrows: "", updated: Date.now() };
       save();
@@ -287,7 +368,7 @@
     const startMode = config && config.def ? curMode : "q:10:ten";
     $("#panel").innerHTML = `<form class="card setup" id="setup">
       <h3>${editing ? "Edit tonight's setup" : "Set up tonight's session"}</h3>
-      <p class="note" style="margin-top:-6px">${editing ? "Archers who haven't shot yet will switch to the new setup." : "You're first here, so you're the admin. Everyone who joins this venue and date will use this setup."}</p>
+      <p class="note" style="margin-top:-6px">${editing ? "Archers who haven't shot yet will switch to the new setup." : manual ? "Everyone you add on this phone will use this setup." : "You're first here, so you're the admin. Everyone who joins this venue and date will use this setup."}</p>
       <label>Round<select id="mode"><optgroup label="Quick setups (5 turns × 6 arrows = 2 ends of 3)">${[10, 12, 15].flatMap((d) => [["ten", "10-zone"], ["five", "5-zone"]].map(([z, zl]) => `<option value="q:${d}:${z}">${d} m · 5 turns × 6 arrows · ${zl}</option>`)).join("")}</optgroup>
         <optgroup label="Custom"><option value="custom">Custom (pick distance, target and ends)</option></optgroup>
         ${groups.map((g) => `<optgroup label="${g}">${window.ROUNDS.filter((r) => r.group === g).map((r) => { const t = window.roundTotals(r);
@@ -312,15 +393,17 @@
       document.querySelectorAll(".chip").forEach((b) => b.classList.toggle("on", b.dataset.d === String(f.dist))); };
     $("#setup").oninput = upd; $("#setup").onchange = upd;
     document.querySelectorAll(".chip").forEach((b) => b.onclick = () => { $("#dist").value = b.dataset.d; upd(); });
-    const cn = $("#cancel"); if (cn) cn.onclick = () => { editing = false; renderScore(); };
+    const cn = $("#cancel"); if (cn) cn.onclick = () => { editing = false; manual ? renderPanel() : renderScore(); };
     upd();
     $("#setup").onsubmit = async (e) => {
       e.preventDefault();
       const f = read(); if (f.mode === "custom" && !(f.ends >= 1 && +f.dist > 0)) return;
-      const admin = config && config.admin ? config.admin : me.key, adminName = config && config.adminName ? config.adminName : me.name;
+      const admin = manual ? "manual" : config && config.admin ? config.admin : me.key, adminName = manual ? "this phone" : config && config.adminName ? config.adminName : me.name;
       const next = { def: buildDef(f), admin, adminName };
-      try { await window.Store.putConfig(sess.id, next); } catch (ex) { toast("Save failed: " + ex.message); return; }
-      config = next; editing = false; ensureScore(); renderScore(); toast("Session setup saved");
+      try { await S().putConfig(sess.id, next); } catch (ex) { toast("Save failed: " + ex.message); return; }
+      config = next; editing = false;
+      if (manual) Object.entries(lastData).forEach(([k, s]) => { if (!s.arrows) { lastData[k] = { ...s, round: next.def.id, def: next.def, updated: Date.now() }; S().putScore(sess.id, k, lastData[k]); if (me && me.key === k) myScore = lastData[k]; } });
+      ensureScore(); manual ? renderPanel() : renderScore(); toast("Session setup saved");
     };
   }
 
@@ -328,14 +411,14 @@
   function save() {
     myScore.updated = Date.now(); lastData[me.key] = { ...myScore };
     const snap = { ...myScore }; $("#cnt") && ($("#cnt").textContent = Object.keys(lastData).length);
-    saving = saving.then(() => window.Store.putScore(sess.id, me.key, snap)).catch((e) => toast("Save failed: " + e.message));
+    saving = saving.then(() => S().putScore(sess.id, me.key, snap)).catch((e) => toast("Save failed: " + e.message));
   }
 
   // ----- polling -----
   function startPoll() {
     stopPoll();
     timer = setInterval(async () => {
-      if (!sess || document.hidden) return;
+      if (!sess || document.hidden || manual) return;
       try {
         const [d, cfg] = await Promise.all([window.Store.getSession(sess.id), window.Store.getConfig(sess.id)]);
         const cfgChanged = JSON.stringify(cfg) !== JSON.stringify(config);
@@ -347,11 +430,13 @@
     }, POLL);
   }
   function stopPoll() { clearInterval(timer); timer = null; }
-  window.addEventListener("storage", (e) => { if (e.key === "archery.v1" && sess && !window.Store.shared) window.Store.getSession(sess.id).then((d) => { lastData = d; if (tab === "board") renderPanel(); }); });
+  window.addEventListener("storage", (e) => { if (e.key === "archery.v1" && sess && !manual && !window.Store.shared) window.Store.getSession(sess.id).then((d) => { lastData = d; if (tab === "board") renderPanel(); }); });
 
   // ---------- boot ----------
   $("#brand").onclick = (e) => { e.preventDefault(); if (me) viewPick(); };
   try { me = JSON.parse(localStorage.getItem("archery.me")); } catch { me = null; }
+  if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
   renderHeader();
-  me && me.key ? viewPick() : viewLogin();
+  let resume = false; try { resume = localStorage.getItem("archery.manual") === "1"; } catch {}
+  resume ? enterManual() : me && me.key ? viewPick() : viewLogin();
 })();

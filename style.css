@@ -156,3 +156,10 @@ td { padding: 6px; border-top: 1px solid var(--line); } td:nth-child(n+3) { font
 tr.tstart td { border-top: 2px solid var(--line); }
 
 .v-target { width: 52px; height: 52px; margin-bottom: 6px; filter: drop-shadow(0 0 12px var(--glow)); }
+
+.manual-btn { width: 100%; margin-top: 12px; }
+.datebox + .manual-btn { margin-top: 14px; }
+.archers { margin-top: 14px; }
+.archers .chips { margin: 0 0 12px; }
+.archers .add { grid-template-columns: 1fr auto; align-items: center; }
+.archers .add input { margin: 0; }
