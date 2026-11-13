@@ -20,6 +20,7 @@ window.ROUNDS = [
   { id: "worcester", name: "Worcester", group: "Indoor", zone: "worc", perEnd: 5, sections: [{ label: "20 yd", arrows: 60 }] },
   { id: "bray1", name: "Bray I", group: "Indoor", zone: "ten", perEnd: 3, sections: [{ label: "20 yd", arrows: 30 }] },
   { id: "short-worc", name: "Short Worcester", group: "Indoor", zone: "worc", perEnd: 5, sections: [{ label: "20 yd", arrows: 30 }] },
+  { id: "test", name: "Test", group: "Indoor", zone: "field", perEnd: 3, endsPerTurn: 2, sections: [{ label: "12 m", arrows: 24 }] },
   // ---- Outdoor Imperial ----
   { id: "york", name: "York", group: "Outdoor Imperial", zone: "five", perEnd: 6, sections: [{ label: "100 yd", arrows: 72 }, { label: "80 yd", arrows: 48 }, { label: "60 yd", arrows: 24 }] },
   { id: "hereford", name: "Hereford", group: "Outdoor Imperial", zone: "five", perEnd: 6, sections: [{ label: "80 yd", arrows: 72 }, { label: "60 yd", arrows: 48 }, { label: "50 yd", arrows: 24 }] },
