@@ -170,3 +170,21 @@ tr.tstart td { border-top: 2px solid var(--line); }
 .invite .qr { width: min(240px, 70vw); margin: 0 auto 10px; background: #fff; border-radius: 12px; padding: 6px; }
 .invite .qr svg { display: block; width: 100%; height: auto; }
 .invite .actions { justify-content: center; gap: 10px; }
+
+/* compact scoring screen: keypad + scorecard fit on one phone screen */
+.session .card { padding: 10px 12px; margin: 8px 0; }
+.setup-chip { margin-top: 8px; padding: 5px 12px; font-size: .78rem; }
+.scorehead .lbl { font-size: 1.05rem; } .scorehead .sub { font-size: .8rem; }
+.big { font-size: 2rem; } .big small { font-size: .75rem; }
+.slots { gap: 6px; margin-bottom: 8px; }
+.slot { width: 36px; height: 36px; font-size: .95rem; }
+.keys { gap: 6px; }
+.key { height: 44px; border-radius: 11px; font-size: 1.1rem; }
+.entry .actions { margin-top: 8px; }
+.entry .btn { padding: 6px 14px; font-size: .85rem; }
+.ends h3 { margin: 0; font-size: .95rem; }
+.ends-h { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 4px; }
+.mini { display: flex; gap: 6px; } .mini .btn { padding: 3px 10px; font-size: .75rem; }
+.sec { margin-bottom: 8px; } .sec-h { margin-bottom: 2px; font-size: .85rem; }
+th { padding: 2px 6px; font-size: .68rem; } td { padding: 3px 6px; font-size: .85rem; }
+.arr { gap: 3px; } .a { width: 22px; height: 22px; font-size: .68rem; }

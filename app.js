@@ -343,7 +343,7 @@
         <div class="actions"><button class="btn ghost" id="undo" ${m.arrows ? "" : "disabled"}>⌫ Undo arrow</button></div>
       </div>`}
       <div class="card ends">
-        <h3>Scorecard</h3>
+        <div class="ends-h"><h3>Scorecard</h3><div class="mini"><button class="btn ghost danger" id="reset">Clear ${manual ? "this" : "my"} scorecard</button>${manual ? `<button class="btn ghost danger" id="remove">Remove archer</button>` : ""}</div></div>
         ${secs.map((s) => {
           const nEnds = Math.ceil(s.arrows / r.perEnd);
           let run = 0;
@@ -357,7 +357,6 @@
           return `<div class="sec"><div class="sec-h"><b>${esc(s.label)}</b><span>${s.sum} · ${s.part.length}/${s.arrows}</span></div>
             ${rows ? `<table><thead><tr>${pt > 1 ? "<th>Turn</th>" : ""}<th>End</th><th>Arrows</th><th>End</th><th>Run</th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="note">Not started</p>`}</div>`;
         }).join("")}
-        <div class="actions"><button class="btn ghost danger" id="reset">Clear ${manual ? "this" : "my"} scorecard</button>${manual ? `<button class="btn ghost danger" id="remove">Remove archer</button>` : ""}</div>
       </div>`;
 
     panel.querySelectorAll(".key").forEach((b) => b.onclick = () => {
@@ -465,6 +464,18 @@
   }
   function stopPoll() { clearInterval(timer); timer = null; }
   window.addEventListener("storage", (e) => { if (e.key === "archery.v1" && sess && !manual && !window.Store.shared) window.Store.getSession(sess.id).then((d) => { lastData = d; if (tab === "board") renderPanel(); }); });
+
+  // ---------- full screen ----------
+  // Installed (home-screen) app is already chromeless; otherwise offer the Fullscreen API where supported (Android/desktop, not iPhone Safari).
+  const standalone = matchMedia("(display-mode: standalone)").matches || navigator.standalone;
+  const fsBtn = $("#fs"), root = document.documentElement;
+  if (fsBtn && !standalone && root.requestFullscreen) {
+    fsBtn.hidden = false;
+    // Browsers need a user gesture, so go full screen on the first tap (once per page load; the button toggles it after that).
+    document.addEventListener("pointerup", () => { if (!document.fullscreenElement) root.requestFullscreen({ navigationUI: "hide" }).catch(() => {}); }, { once: true });
+    fsBtn.onclick = () => { document.fullscreenElement ? document.exitFullscreen() : root.requestFullscreen({ navigationUI: "hide" }).catch(() => {}); };
+    document.addEventListener("fullscreenchange", () => { fsBtn.textContent = document.fullscreenElement ? "Exit full screen" : "⛶ Full screen"; });
+  }
 
   // ---------- boot ----------
   $("#brand").onclick = (e) => { e.preventDefault(); if (me) viewPick(); };
