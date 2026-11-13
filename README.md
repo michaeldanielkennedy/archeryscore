@@ -10,6 +10,8 @@ A live scoreboard for UK (Archery GB) rounds, themed per venue:
 
 Log in and pick a venue and date. The **first person in becomes that night's admin** and sets up the session: either a standard round (Portsmouth, WA 18m, Worcester, York, Hereford, St George, Windsor, National, WA 720 and more) or a **custom** one (any distance such as 10, 12 or 15 m, 5-zone or 10-zone target, number of ends, arrows per end). Everyone who joins afterwards automatically gets that setup and just taps in each arrow. The admin can edit the setup later. The **Leaderboard** tab shows everyone at the same venue on the same date, updating automatically.
 
+**Invite people with a QR code.** Once you're in a live session, tap **Invite** under the date to show a QR code and link for that venue and date (with Copy / Share buttons). Scanning it opens the site, asks the person to log in if needed, and drops them straight into the same session.
+
 **No internet?** Tap **Score on one phone** on the login or venue screen. One person adds everyone's names, picks the round, and taps in each archer's arrows (switch archers with the name chips). The leaderboard works as normal, and everything is saved on that phone only, with no account or network needed. Later, when you have a connection, open the **Leaderboard** tab and use **Upload to live board** to pick a venue and date and add everyone's scores to the live leaderboard (re-uploading just updates them). Open the site once with a connection first so the page is cached for offline use.
 
 It's a static site (no build step), so it runs on GitHub Pages.

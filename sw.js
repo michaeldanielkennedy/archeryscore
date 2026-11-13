@@ -1,6 +1,6 @@
 // Caches the app shell so the page still opens with no internet (needed for manual scoring).
-const CACHE = "archery-shell-v1";
-const SHELL = ["./", "index.html", "style.css", "config.js", "rounds.js", "store.js", "app.js", "favicon.svg"];
+const CACHE = "archery-shell-v2";
+const SHELL = ["./", "index.html", "style.css", "config.js", "rounds.js", "qr.js", "store.js", "app.js", "favicon.svg"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", (e) => { e.waitUntil(caches.keys().then((k) => Promise.all(k.filter((x) => x !== CACHE).map((x) => caches.delete(x)))).then(() => self.clients.claim())); });
 self.addEventListener("fetch", (e) => {

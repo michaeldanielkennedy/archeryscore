@@ -164,3 +164,9 @@ tr.tstart td { border-top: 2px solid var(--line); }
 .archers .add { grid-template-columns: 1fr auto; align-items: center; }
 .archers .add input { margin: 0; }
 .ver { text-align: center; color: var(--muted); font-size: .75rem; padding: 20px 0 80px; opacity: .7; }
+
+.invite-btn { margin-left: 8px; font-size: .8rem; }
+.invite { text-align: center; }
+.invite .qr { width: min(240px, 70vw); margin: 0 auto 10px; background: #fff; border-radius: 12px; padding: 6px; }
+.invite .qr svg { display: block; width: 100%; height: auto; }
+.invite .actions { justify-content: center; gap: 10px; }

@@ -16,6 +16,8 @@
   let editing = false;
   let likeForLike = false;
   let manual = false;       // "one phone" mode: everything stays on this device
+  let pendingJoin = null;   // {venueId, date} from a scanned QR / shared link, used once logged in
+  let showInvite = false;   // invite (QR) card open in the session header
   let realMe = null;        // logged-in user to restore when leaving manual mode
   const S = () => (manual ? window.ManualStore : window.Store);
 
@@ -48,6 +50,35 @@
     };
   }
   const scoreAfter = (m, n) => m.a.slice(0, n * m.r.perEnd).reduce((x, t) => x + val(t), 0);
+
+  // ---------- invite link / QR ----------
+  const joinUrl = (s) => `${location.origin}${location.pathname}?join=${encodeURIComponent(s.id)}`;
+  function parseJoin() {
+    const v = new URLSearchParams(location.search).get("join") || "";
+    const i = v.lastIndexOf("_"), venueId = v.slice(0, i), date = v.slice(i + 1);
+    if (!window.VENUES.some((x) => x.id === venueId) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+    return { venueId, date };
+  }
+  function qrSvg(text) {
+    const q = window.qrcode(0, "M"); q.addData(text); q.make();
+    return q.createSvgTag({ cellSize: 6, margin: 4, scalable: true });
+  }
+  function wireInvite() {
+    const btn = $("#invite"), box = $("#inviteBox"); if (!btn || !box) return;
+    const url = joinUrl(sess);
+    btn.onclick = () => { showInvite = !showInvite; renderInvite(); };
+    function renderInvite() {
+      btn.setAttribute("aria-expanded", showInvite);
+      if (!showInvite) { box.innerHTML = ""; return; }
+      let svg = ""; try { svg = qrSvg(url); } catch {}
+      box.innerHTML = `<div class="card invite"><div class="qr" role="img" aria-label="QR code to join this session">${svg}</div>
+        <p class="note c">Scan to join <b>${esc(sess.venue.name)}</b> on ${prettyDate(sess.date)}.</p>
+        <div class="actions"><button class="btn ghost" type="button" id="copyLink">Copy link</button>${navigator.share ? `<button class="btn primary" type="button" id="shareLink">Share…</button>` : ""}</div></div>`;
+      $("#copyLink").onclick = async () => { try { await navigator.clipboard.writeText(url); toast("Link copied"); } catch { toast(url); } };
+      const sh = $("#shareLink"); if (sh) sh.onclick = () => navigator.share({ title: "Join our archery session", url }).catch(() => {});
+    }
+    renderInvite();
+  }
 
   // ---------- views ----------
   function renderHeader() {
@@ -102,6 +133,7 @@
   }
 
   function viewPick() {
+    if (pendingJoin && me) { const j = pendingJoin; pendingJoin = null; joinSession(j.venueId, j.date); return; }
     setTheme("default"); stopPoll(); sess = null; myScore = null; config = null; editing = false;
     let chosen = null;
     app.innerHTML = `
@@ -178,7 +210,7 @@
 
   async function joinSession(venueId, date) {
     const venue = window.VENUES.find((v) => v.id === venueId);
-    sess = { venue, date, id: `${venueId}_${date}` };
+    sess = { venue, date, id: `${venueId}_${date}` }; showInvite = false;
     setTheme(venue.theme);
     app.innerHTML = `<div class="loading">Loading session…</div>`;
     try {
@@ -199,7 +231,9 @@
         <div class="s-head">
           <button class="link" id="back">${manual ? "← Exit one-phone mode" : "← Change venue/date"}</button>
           <h2>${esc(sess.venue.name)}</h2>
-          <p class="when">${prettyDate(sess.date)} <span class="live"><i></i>${manual || !window.Store.shared ? "Saved on this phone" : "Live"}</span></p>
+          <p class="when">${prettyDate(sess.date)} <span class="live"><i></i>${manual || !window.Store.shared ? "Saved on this phone" : "Live"}</span>
+            ${!manual && window.Store.shared && window.qrcode ? `<button class="link invite-btn" type="button" id="invite" aria-expanded="false">Invite ▦</button>` : ""}</p>
+          <div id="inviteBox"></div>
         </div>
         <nav class="tabs">
           <button data-t="score" class="${tab === "score" ? "on" : ""}">My scorecard</button>
@@ -210,7 +244,7 @@
       </section>`;
     $("#back").onclick = manual ? exitManual : viewPick;
     app.querySelectorAll(".tabs button").forEach((b) => b.onclick = () => { tab = b.dataset.t; viewSession(lastData); });
-    lastData = data; renderPanel();
+    lastData = data; renderPanel(); wireInvite();
   }
   let lastData = {};
 
@@ -438,6 +472,9 @@
   if ("serviceWorker" in navigator && location.protocol !== "file:") navigator.serviceWorker.register("sw.js").catch(() => {});
   $("#ver").textContent = "v" + ((window.ARCHERY_CONFIG || {}).version || "?");
   renderHeader();
+  pendingJoin = parseJoin();
+  if (pendingJoin) { try { history.replaceState(null, "", location.pathname); } catch {} }
   let resume = false; try { resume = localStorage.getItem("archery.manual") === "1"; } catch {}
+  if (pendingJoin) { try { localStorage.removeItem("archery.manual"); } catch {} resume = false; }
   resume ? enterManual() : me && me.key ? viewPick() : viewLogin();
 })();
