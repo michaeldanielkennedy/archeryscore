@@ -97,7 +97,7 @@ input:focus, select:focus { outline: 2px solid var(--a); outline-offset: 1px; }
 @keyframes pulse2 { 50% { box-shadow: 0 0 0 6px var(--glow); } }
 .slot.f { border-style: solid; border-width: 0; }
 .keys { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
-.keys.z-ten { grid-template-columns: repeat(4, 1fr); }
+.keys.z-ten, .keys.z-field { grid-template-columns: repeat(4, 1fr); }
 .key { height: 58px; border-radius: 14px; border: 0; font-weight: 800; font-size: 1.3rem; transition: transform .07s, filter .15s; box-shadow: inset 0 -4px 0 #0003; }
 .key:active { transform: scale(.92); } .key:hover { filter: brightness(1.1); }
 .actions { display: flex; justify-content: center; margin-top: 14px; }

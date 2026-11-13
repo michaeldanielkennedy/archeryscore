@@ -39,7 +39,7 @@
     const r = s.def || window.roundById(s.round); if (!r) return null;
     const a = toks(s), tot = window.roundTotals(r);
     const total = a.reduce((x, t) => x + val(t), 0);
-    const top = r.zone === "worc" ? 5 : 9;
+    const top = r.zone === "worc" || r.zone === "field" ? 5 : 9;
     return {
       r, a, total, arrows: a.length, max: tot.max, of: tot.arrows,
       hits: a.filter((t) => val(t) > 0).length,
@@ -304,7 +304,7 @@
           <span class="ends ${x.m.ends < x.lead ? "behind" : ""}">${likeForLike ? `Compared after ${x.n} end${x.n === 1 ? "" : "s"}` : `Ends shot ${x.m.ends}/${x.m.totalEnds}`}${x.m.perTurn > 1 && !likeForLike ? ` · Turn ${Math.ceil(x.m.arrows / (x.m.r.perEnd * x.m.perTurn))}/${Math.ceil(x.m.totalEnds / x.m.perTurn)}` : ""}</span>
           <div class="prog"><i style="width:${pct}%"></i></div></div>
         <div class="stats"><span>${x.m.hits} hits</span><span>${x.m.golds} golds</span>${x.m.xs ? `<span>${x.m.xs} X</span>` : ""}</div>
-        <div class="total">${x.shown}<small>/ ${likeForLike ? x.n * x.m.r.perEnd * (x.m.r.zone === "five" ? 9 : x.m.r.zone === "worc" ? 5 : 10) : x.m.max}</small></div>
+        <div class="total">${x.shown}<small>/ ${likeForLike ? x.n * x.m.r.perEnd * window.zoneMax(x.m.r.zone) : x.m.max}</small></div>
       </article>`;
     }).join("")}</div><p class="note c">${manual ? "Saved on this phone only." : `Updates automatically${window.Store.shared ? "" : " (demo mode: this browser only)"}.`}</p>`;
     $("#lfl").onchange = (e) => { likeForLike = e.target.checked; renderPanel(); };
@@ -385,7 +385,7 @@
 
   function buildDef(f) {
     let ept = f.ept || 1;
-    const zl = { five: "5-zone", ten: "10-zone" };
+    const zl = { five: "5-zone", ten: "10-zone", field: "field face" };
     if (f.mode.startsWith("q:")) { const [, d, z] = f.mode.split(":"); f = { dist: d, unit: "m", zone: z, ends: 10, perEnd: 3 }; ept = 2; }
     else if (f.mode !== "custom") return window.roundById(f.mode);
     const label = `${f.dist} ${f.unit}`;
@@ -412,7 +412,7 @@
           <div class="chips">${[10, 12, 15, 18, 20].map((d) => `<button type="button" class="chip" data-d="${d}">${d}</button>`).join("")}</div>
           <div class="two"><input id="dist" type="number" min="1" max="200" step="any" value="${dist}" required>
           <select id="unit"><option value="m">metres</option><option value="yd">yards</option></select></div></label>
-        <label>Target zones<select id="zone"><option value="ten">10-zone (X, 10 to 1)</option><option value="five">5-zone (9, 7, 5, 3, 1)</option></select></label>
+        <label>Target zones<select id="zone"><option value="ten">10-zone (X, 10 to 1)</option><option value="five">5-zone (9, 7, 5, 3, 1)</option><option value="field">Field face (6, 5, 4, 3, 2, 1)</option></select></label>
         <div class="two"><label>Number of ends<input id="ends" type="number" min="1" max="60" value="${ends}" required></label>
         <label>Arrows per end<select id="pe">${[3, 5, 6].map((n) => `<option>${n}</option>`).join("")}</select></label></div>
         <label>Ends per turn<select id="ept"><option value="1">1 end per turn</option><option value="2">2 ends per turn (e.g. 6 arrows = 2 ends of 3)</option></select></label>

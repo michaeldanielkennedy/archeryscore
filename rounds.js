@@ -4,6 +4,7 @@
 //   "five" - Imperial 5-zone face: Gold 9, Red 7, Blue 5, Black 3, White 1
 //   "ten"  - Metric 10-zone face: X/10 .. 1 (X counts 10)
 //   "worc" - Worcester face: 5 .. 1
+//   "field" - Field face (black, yellow centre): 6 (centre ring), 5 (yellow), 4 .. 1
 // Each section is a block of arrows shot at one distance.
 
 window.VENUES = [
@@ -38,11 +39,13 @@ window.ZONES = {
   five: [["9", 9, "gold"], ["7", 7, "red"], ["5", 5, "blue"], ["3", 3, "black"], ["1", 1, "white"], ["M", 0, "miss"]],
   ten: [["X", 10, "gold"], ["10", 10, "gold"], ["9", 9, "gold"], ["8", 8, "red"], ["7", 7, "red"], ["6", 6, "blue"],
         ["5", 5, "blue"], ["4", 4, "black"], ["3", 3, "black"], ["2", 2, "white"], ["1", 1, "white"], ["M", 0, "miss"]],
+  field: [["6", 6, "gold"], ["5", 5, "gold"], ["4", 4, "black"], ["3", 3, "black"], ["2", 2, "black"], ["1", 1, "black"], ["M", 0, "miss"]],
   worc: [["5", 5, "black"], ["4", 4, "black"], ["3", 3, "white"], ["2", 2, "white"], ["1", 1, "white"], ["M", 0, "miss"]],
 };
 
+window.zoneMax = (z) => ({ five: 9, worc: 5, field: 6 }[z] || 10);
 window.roundById = (id) => window.ROUNDS.find((r) => r.id === id);
 window.roundTotals = (r) => ({
   arrows: r.sections.reduce((a, s) => a + s.arrows, 0),
-  max: r.sections.reduce((a, s) => a + s.arrows, 0) * (r.zone === "five" ? 9 : r.zone === "worc" ? 5 : 10),
+  max: r.sections.reduce((a, s) => a + s.arrows, 0) * window.zoneMax(r.zone),
 });
