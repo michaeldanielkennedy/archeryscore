@@ -7,7 +7,7 @@
 // See README.md for the step-by-step setup and security rules.
 // Bump this on every deploy so you can check GitHub Pages has updated (shown at the bottom of the page).
 window.ARCHERY_CONFIG = {
-  version: "1.4.0 (2026-11-13)",
+  version: "1.4.1 (2026-11-13)",
   firebaseUrl: "https://archery-4fa4b-default-rtdb.europe-west1.firebasedatabase.app",
   pollSeconds: 4,
 };

@@ -403,7 +403,7 @@
     $("#panel").innerHTML = `<form class="card setup" id="setup">
       <h3>${editing ? "Edit tonight's setup" : "Set up tonight's session"}</h3>
       <p class="note" style="margin-top:-6px">${editing ? "Archers who haven't shot yet will switch to the new setup." : manual ? "Everyone you add on this phone will use this setup." : "You're first here, so you're the admin. Everyone who joins this venue and date will use this setup."}</p>
-      <label>Round<select id="mode"><optgroup label="Quick setups (5 turns × 6 arrows = 2 ends of 3)">${[10, 12, 15].flatMap((d) => [["ten", "10-zone"], ["five", "5-zone"]].map(([z, zl]) => `<option value="q:${d}:${z}">${d} m · 5 turns × 6 arrows · ${zl}</option>`)).join("")}</optgroup>
+      <label>Round<select id="mode"><optgroup label="Quick setups (5 turns × 6 arrows = 2 ends of 3)">${[10, 12, 15].flatMap((d) => [["ten", "10-zone"], ["five", "5-zone"], ["field", "field face"]].map(([z, zl]) => `<option value="q:${d}:${z}">${d} m · 5 turns × 6 arrows · ${zl}</option>`)).join("")}</optgroup>
         <optgroup label="Custom"><option value="custom">Custom (pick distance, target and ends)</option></optgroup>
         ${groups.map((g) => `<optgroup label="${g}">${window.ROUNDS.filter((r) => r.group === g).map((r) => { const t = window.roundTotals(r);
           return `<option value="${r.id}">${esc(r.name)} · ${t.arrows} arrows</option>`; }).join("")}</optgroup>`).join("")}</select></label>
